@@ -1,7 +1,6 @@
 const http = require('node:http');
 const fs = require('node:fs');
-const { formidable } = require('formidable');  // formidable v3 用 named import
-
+const { formidable } = require('formidable'); // formidable v3 用 named import
 // ========== 任務一：讀取上傳設定 ==========
 /**
  * 從 process.env 讀取上傳相關設定，回傳設定物件。
@@ -28,6 +27,12 @@ const { formidable } = require('formidable');  // formidable v3 用 named import
 function getUploadConfig() {
   // TODO: 實作此函式
   // 提示：用 || 給預設值；MAX_FILE_SIZE_MB 是字串，記得先 Number() 轉型再換算 bytes
+  return {
+    uploadDir: process.env.UPLOAD_DIR || '/tmp',
+    maxFileSize:
+      Number(process.env.MAX_FILE_SIZE_MB) * 1024 * 1024 || 5 * 1024 * 1024,
+    gymName: process.env.GYM_NAME || '未命名健身房',
+  };
 }
 
 // ========== 任務二：取副檔名 ==========
@@ -51,6 +56,8 @@ function getUploadConfig() {
 function getFileExtension(filename) {
   // TODO: 實作此函式
   // 提示：用 lastIndexOf('.') 找最後一個 .，toLowerCase() 轉小寫
+  const lastIndex = filename.lastIndexOf('.');
+  return lastIndex === -1 ? '' : filename.slice(lastIndex).toLowerCase();
 }
 
 // ========== 任務三：解析檔案 metadata ==========
@@ -76,6 +83,13 @@ function getFileExtension(filename) {
 function parseFileMetadata(file) {
   // TODO: 實作此函式
   // 提示：呼叫 getFileExtension 取副檔名，Math.round(size / 1024) 算 KB
+  const { originalFilename, size } = file;
+
+  return {
+    filename: originalFilename,
+    sizeKB: Math.round(size / 1024),
+    ext: getFileExtension(originalFilename),
+  };
 }
 
 // ========== 任務四：產出 upload log 字串 ==========
@@ -98,6 +112,10 @@ function parseFileMetadata(file) {
 function formatUploadLog(meta, config) {
   // TODO: 實作此函式
   // 提示：用 template literal 組字串
+  const { filename, sizeKB } = meta;
+  const { uploadDir, gymName } = config;
+  const name = filename.split('.')[0];
+  return `[${gymName}] Uploaded ${filename} (${sizeKB} KB) → ${uploadDir}`;
 }
 
 // ========== 任務五：路由分派 ==========
@@ -125,6 +143,45 @@ function formatUploadLog(meta, config) {
  *   // 在 createUploadServer 裡：
  *   http.createServer((req, res) => router(req, res, config))
  */
+const Headers = { 'Content-Type': 'application/json' };
+function handleUpload(req, res, config) {
+  const form = formidable({
+    uploadDir: config.uploadDir,
+    maxFileSize: config.maxFileSize,
+    keepExtensions: true,
+  });
+  form.parse(req, (err, fields, files) => {
+    if (err) {
+      res.writeHead(500, Headers);
+      res.end(JSON.stringify({ error: err.message }));
+      return;
+    }
+
+    const file = files.file?.[0];
+    if (!file) {
+      res.writeHead(400, Headers);
+      res.end(JSON.stringify({ error: 'No file uploaded' }));
+      return;
+    }
+
+    const meta = parseFileMetadata(file);
+    const savedPath = file.filepath;
+    res.writeHead(200, Headers);
+    res.write(
+      JSON.stringify({
+        ...meta,
+        savedPath: file.filepath,
+      }),
+    );
+    res.end();
+  });
+}
+
+function handleNotFound(req, res) {
+  res.writeHead(404, Headers);
+  res.end(JSON.stringify({ error: 'Not Found' }));
+}
+
 function router(req, res, config) {
   // TODO: 實作此函式
   // 建議（非強制）：
@@ -136,7 +193,15 @@ function router(req, res, config) {
   //   - form.on('error', ...) 不需再處理 res 相關，避免產生回應兩次的錯誤。這個部分可用來紀錄 log、清理暫存檔、額外監控等等。目前可先有此概念即可，或者初步撰寫如下：
   //     form.on('error', (err) => {
   //       console.log(err); // 記錄 log、清理暫存檔、額外監控可以寫在這邊
-  //     });  
+  //     });
+  const { method, url } = req;
+
+  if (method === 'POST' && url === '/coaches/avatar') {
+    handleUpload(req, res, config);
+    return;
+  }
+
+  handleNotFound(req, res);
 }
 
 // ========== 任務六：建立上傳 server ==========
@@ -158,6 +223,7 @@ function router(req, res, config) {
 function createUploadServer(config) {
   // TODO: 實作此函式
   // 提示：主邏輯都在 router 裡，這邊函式內容不多
+  return http.createServer((req, res) => router(req, res, config));
 }
 
 module.exports = {
