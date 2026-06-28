@@ -1,6 +1,8 @@
 const http = require('node:http');
 const fs = require('node:fs');
-const { formidable } = require('formidable'); // formidable v3 用 named import
+const { formidable } = require('formidable'); // formidable v3
+
+// 用 named import
 // ========== 任務一：讀取上傳設定 ==========
 /**
  * 從 process.env 讀取上傳相關設定，回傳設定物件。
@@ -143,8 +145,16 @@ function formatUploadLog(meta, config) {
  *   // 在 createUploadServer 裡：
  *   http.createServer((req, res) => router(req, res, config))
  */
+
+function ensureUploadDir(uploadDir) {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+}
+
 const Headers = { 'Content-Type': 'application/json' };
 function handleUpload(req, res, config) {
+  ensureUploadDir(config.uploadDir);
   const form = formidable({
     uploadDir: config.uploadDir,
     maxFileSize: config.maxFileSize,
